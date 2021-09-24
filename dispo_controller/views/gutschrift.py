@@ -8,3 +8,10 @@ from rest_framework import status
 @api_view(['GET', 'POST'])
 def test(request):
     return Response("OK")
+
+
+# Gutschrift erstellen
+@api_view(['GET', 'POST'])
+def create_credit(request):
+    
+    return Response("OK")

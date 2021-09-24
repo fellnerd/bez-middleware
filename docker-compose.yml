@@ -1,0 +1,10 @@
+version: '3.4'
+
+services:
+  bedb_middleware:
+    image: bedb_middleware
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    ports:
+      - 8002:8002
