@@ -1,0 +1,4 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/70d6f10e-0909-452f-8460-3323bea7c173/resourceGroups/Bioenergiezentrum/providers/Microsoft.Web/sites/bez-middleware",
+    "appService.deploySubpath": "."
+}

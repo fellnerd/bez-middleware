@@ -9,6 +9,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/manage.py",
+            "envFile": "${workspaceFolder}/.env_debug",
             "args": [
                 "runserver",
                 "0.0.0.0:8002",
