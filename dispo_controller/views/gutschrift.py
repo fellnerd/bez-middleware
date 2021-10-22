@@ -70,7 +70,7 @@ def create_credit(request):
     # Fetch data from Dispo where StateID = 3
     if type == "Proforma":
         results = api_client.fetch(service="bez_database", resource="bez_disposition", params={"where": "StateID=3", "take": "20000"})
-        logger.info("Type: Proforma -----------------_>>>>>>>>>>>>>>>>>>>")
+        logger.info("Type: Proforma -----------------")
 
     if results == None:
         return Response({
