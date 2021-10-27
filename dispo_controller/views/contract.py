@@ -98,7 +98,7 @@ def create_contract(request):
     else:
         ### Vertrag wurde freigegeben -> Preise erstellen
         if not contract_data["preise_erstellt"]:
-            create_prices(contract_data)
+            #create_prices(contract_data)
             create_stock(contract_data)
     
 
@@ -160,8 +160,8 @@ def create_stock(contract):
                 data={
                     "name": stock["name"],
                     "material": stock["material"]["id"],
-                    "order_start": timeframe["min"],
-                    "order_end": timeframe["max"],
+                    "order_start": str(timeframe["min"]),
+                    "order_end": str(timeframe["max"]),
                     "min_order": stock["min_order"],
                     "max_order": stock["max_order"],
                     "supplier": contract["supplier"]["id"]
@@ -169,5 +169,30 @@ def create_stock(contract):
                 }
             )
 
-def split_timeframe(min_order_date, max_order_date):
-    pass
+def split_timeframe(min_order_date:datetime, max_order_date:datetime):
+    weekday_min = min_order_date.weekday()
+    weekday_max = max_order_date.weekday()
+    min_ref_date = min_order_date
+
+    frames = []
+    delta_d = 6
+    while min_ref_date <= max_order_date:
+        max_d = shift_to_monday(min_ref_date) + timedelta(days = delta_d)
+        frames.append({
+            "min": shift_to_monday(min_ref_date),
+            "max": max_d if max_d <= max_order_date else max_order_date
+        })
+
+        min_ref_date = shift_to_monday(min_ref_date) + timedelta(days = delta_d + 1)
+        if min_ref_date >= max_order_date:
+            break
+    
+    return frames
+
+def shift_to_monday(date:datetime):
+    if date.weekday() == 0: return date
+    while date.weekday() > 0:
+        date = date + timedelta(days = 1)
+    return date
+
+

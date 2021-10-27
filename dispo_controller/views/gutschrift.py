@@ -45,7 +45,7 @@ COMPOSER_HOST = os.getenv('COMPOSER_HOST')
 # Create your views here.
 @api_view(['GET', 'POST'])
 def test(request):
-    return Response("OK")
+    return Response("4")
 
 # Gutschrift erstellen
 # @api_view(['GET', 'POST'])
@@ -65,12 +65,12 @@ def create_credit(request):
 
     if type == "Gutschrift":
         results = api_client.fetch(service="bez_database", resource="bez_disposition", params={"where": f"StateID=3|SupplierID={data['supplier']}|SiteID={data['site']}", "take": "2000"})
-        logger.info("Type: Gutschriften ------------->>>>>>>>>>>>")
+        logger.info("Type: Gutschriften")
    
     # Fetch data from Dispo where StateID = 3
     if type == "Proforma":
         results = api_client.fetch(service="bez_database", resource="bez_disposition", params={"where": "StateID=3", "take": "20000"})
-        logger.info("Type: Proforma -----------------")
+        logger.info("Type: Proforma")
 
     if results == None:
         return Response({
@@ -439,7 +439,7 @@ def set_dispo_status(response, results):
             r = api_client.update(service="bez_database", resource="bez_disposition", data=data_obj, id=dispo_obj["id"])
             print(f"Dispo: {r['id']} set to close") 
     else:
-        print("ERROR") 
+        print("Error: set new status on dispo") 
     
  
 def next_index(last_accounting):
@@ -481,7 +481,7 @@ def resolve_threshold(results):
         item = [r for r in response if r["SupplierID"]["id"] == result["SupplierID"]["id"] and r["MaterialID"]["id"] == result["MaterialID"]["id"] and parser.parse(r["DateEnd"]) >= weighting_date]
         if item != None:
             if len(item) > 1:
-                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                print("More than one item!")
             if len(item) > 0:
                 item = item[0]
                 th1 = dec(item["Threshold1"]) 

@@ -39,12 +39,18 @@ def make_order(request):
             id=1
         )
 
-        ### subtract by amount
-        refresh_stock(order)
+        ### stop if already sent
+        if order['sent']:
+            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
+        ### subtract by amount
+        status_stock = refresh_stock(order)
+        if not status_stock:
+            return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
         ### send mail to supplier
-        order_min_data = parser.parse(order['order_start_date'])
-        order_max_data = parser.parse(order['order_date_end'])
+        order_min_data = parser.parse(order['stock']['order_start'])
+        order_max_data = parser.parse(order['stock']['order_end'])
         receiver = order['stock']['supplier']['Email']
         status_sent = send_mail(
             order=order,
@@ -91,15 +97,27 @@ def refresh_stock(order):
     min_order = order["stock"]["min_order"] - order["amount"]
     max_order = order["stock"]["max_order"] - order["amount"]
 
-    client.update(
-        service="bez_database",
-        resource="bez_ordersystem_stock",
-        id=order["stock"]["id"],
-        data={
-            "min_order": min_order,
-            "max_order": max_order
-        }
-    )
+    if max_order >= 0:
+        client.update(
+            service="bez_database",
+            resource="bez_ordersystem_stock",
+            id=order["stock"]["id"],
+            data={
+                "min_order": min_order,
+                "max_order": max_order
+            }
+        )
+        return True
+    else:
+        client.update(
+            service="bez_database",
+            resource="bez_ordersystem",
+            data={
+                "error": "Die Bestellung konnte nicht durchgeführt werden: Maximalmenge erreicht!",
+            },
+            id=order['id']
+        )
+        return False
 
 def send_mail(order, template, receiver, subject, message_header = "", message = ""):
     data = {

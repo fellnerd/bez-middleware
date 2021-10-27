@@ -19,3 +19,5 @@ services:
     build:
       context: /usr/projects/invoice-composer/
       dockerfile: ./Dockerfile
+    ports:
+      - 8024:8000
