@@ -98,7 +98,7 @@ def create_contract(request):
     else:
         ### Vertrag wurde freigegeben -> Preise erstellen
         if not contract_data["preise_erstellt"]:
-            #create_prices(contract_data)
+            create_prices(contract_data)
             create_stock(contract_data)
     
 

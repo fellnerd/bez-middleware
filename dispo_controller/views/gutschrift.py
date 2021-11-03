@@ -18,6 +18,8 @@ from dateutil.relativedelta import relativedelta
 import calendar
 import os
 import logging
+from dictor import dictor
+
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,11 @@ def test(request):
 #     return Response("OK")
 
 # Gutschrift erstellen
+
+sites = []
+cities = []
+countries = []
+
 @api_view(['GET', 'POST'])
 def create_credit(request):
     logger.info("Start composing invoices ...")
@@ -76,6 +83,27 @@ def create_credit(request):
         return Response({
             "body": False
         })
+
+    # get all sitesd
+    global sites
+    sites = api_client.fetch(
+        service="bez_database",
+        resource="bez_site"
+    )
+
+    global cities
+    cities = api_client.fetch(
+        service="bez_database",
+        resource="bez_city",
+        params={"take": 1000}
+    )
+
+    global countries
+    countries = api_client.fetch(
+        service="bez_database",
+        resource="bez_countries",
+        params={"take": 1000}
+    )
     
     # Get actual month
     month_now = datetime.now().month - CORR_MONTH
@@ -110,13 +138,13 @@ def create_credit(request):
         })
 
     # Resolve data
-    logger.info("Resolvong supplier data")
+    logger.info("Resolving supplier data")
     for i,item in enumerate(sorted_items):
         values = item.values()
         for rows in values:
             resolved_rows = resolve_supplier(rows)
             sorted_items[i] = resolved_rows
-    logger.info("Resolvong supplier data done")
+    logger.info("Resolving supplier data done")
 
     # Gpup by HKW
     def key_func_site(k):
@@ -175,8 +203,32 @@ def resolve_supplier(rows):
     for i,row in enumerate(rows):
         rows[i]["SupplierID"] = supplier_data
         # print(rows[i]["SiteID"]["name"])
-        logger.info(rows[i]["SiteID"]["name"])
+        # logger.info(rows[i]["SiteID"]["name"])
     
+    return rows
+
+def resolve_site(rows):
+    for i,row in enumerate(rows):
+        f = [s for s in sites if s['id'] == rows[i]['SiteID']['id']]
+        rows[i]['SiteID'] = f[0] if len(f) > 0 else None
+        if rows[i]['SiteID'] == None:
+            print("")
+    return rows
+
+def resolve_city(rows):
+    for i,row in enumerate(rows):
+        f = [s for s in cities if s['id'] == rows[i]['SupplierID']['CityID']['id']]
+        rows[i]['SupplierID']['CityID'] = f[0] if len(f) > 0 else None
+        if rows[i]['SupplierID']['CityID'] == None:
+            print("")
+    return rows
+
+def resolve_countries(rows):
+    for i,row in enumerate(rows):
+        f = [s for s in countries if s['id'] == rows[i]['SupplierID']['CityID']['CountryID']['id']]
+        rows[i]['SupplierID']['CityID']['CountryID'] = f[0] if len(f) > 0 else None
+        if rows[i]['SupplierID']['CityID']['CountryID'] == None:
+            print("")
     return rows
 
  
@@ -184,6 +236,12 @@ def resolve_supplier(rows):
 def get_tabel_model(items, data):
     table_model = []
     user_name = data.get("user_name_prop")
+    try:
+        items = resolve_site(items)
+        items = resolve_city(items)
+        items = resolve_countries(items)
+    except Exception as e:
+        logger.error(str(e))
     
     grouped = group_categories(items)
     sum_price = 0
@@ -213,7 +271,7 @@ def get_tabel_model(items, data):
                     },
                     {
                         'name': 'Gesamt',
-                        'value': f"€ {str(dec((entities['Weight']/1000)*entities['Price'])).replace('.', ',')}",
+                        'value': f"€ {str(dec(dec((entities['Weight']/1000))*dec(entities['Price']))).replace('.', ',')}",
                         'subtitle': '[€/Kategorie]'
                     }
                 ]
@@ -222,15 +280,15 @@ def get_tabel_model(items, data):
         
     # create sum
     
-    vat = (items[0]["SupplierID"]["VAT"]) * 10
-    price_with_vat = sum_price * dec(vat) if sum_price * dec(vat) > 0 else 0
-    sum_price = dec(sum_price + price_with_vat)
-    vat_price = price_with_vat - sum_price if vat > 0 else 0
+    vat = dec((items[0]["SupplierID"]["VAT"]))
+    vat_price = sum_price * (vat + 1) - sum_price
+    vat_price = vat_price if vat_price > 0 else 0
+    sum_price = sum_price + vat_price
 
     table_model.append([
             {
                 'name': 'Material',
-                'value': f'zuzüglich {vat * 10} % MWSt'
+                'value': f'zuzüglich {vat * 100} % MWSt'
             },
             {
                 'name': 'Wasser',
@@ -246,7 +304,7 @@ def get_tabel_model(items, data):
             },
             {
                 'name': 'Gesamt',
-                'value': f"€ {str(vat_price).replace('.', ',')}"
+                'value': f"€ {str(dec(vat_price)).replace('.', ',')}"
             }
         ])
 
@@ -269,7 +327,7 @@ def get_tabel_model(items, data):
             },
             {
                 'name': 'Summe',
-                'value': f"€ {str(sum_price).replace('.', ',')}"
+                'value': f"€ {str(dec(sum_price)).replace('.', ',')}"
             }
         ])
 
@@ -277,16 +335,16 @@ def get_tabel_model(items, data):
         "type": data.get("type"),
         "billnr":data.get("billnr"),
         "supplier" : items[0]["SupplierID"]["Name"],
-        "supplier_street" : items[0]["SupplierID"]["Street"],
-        "supplier_city" : items[0]["SupplierID"]["CityID"]["name"],
-        "create_date" : str(datetime.now().date()),
+        "supplier_street" : str(dictor(items[0], "SupplierID.Street")) + " " + str(dictor(items[0], "SupplierID.StreetNumber")),
+        "supplier_city" : str(dictor(items[0], "SupplierID.CityID.CountryID.Code")) + "-" + str(dictor(items[0], "SupplierID.CityID.ZipCode")) + " " + str(dictor(items[0], "SupplierID.CityID.Name")),
+        "create_date" : f"{str(calendar.monthrange(datetime.now().year, datetime.now().month - CORR_MONTH)[1])}.{datetime.now().month - CORR_MONTH}.{datetime.now().year}",
         "uid" : items[0]["SupplierID"]["UID"],
         "supplier" : items[0]["SupplierID"]["Name"],
-        "month" : months[datetime.now().month - CORR_MONTH -1][1],
+        "month" : months[datetime.now().month - CORR_MONTH -1][1] + ", " + str(datetime.now().year),
         "user_name": user_name,
-        "site_name" : items[0]["SiteID"]["name"],
-        "site_street" : data.get("site_street"),
-        "site_city" : data.get("site_city"),
+        "site_name" : items[0]["SiteID"]["Name"],
+        "site_street" : dictor(items[0], 'SiteID.street'),
+        "site_city" : dictor(items[0], 'SiteID.city'),
         "pay_target" : items[0]["SupplierID"]["PaymentDays"],
         "iban" : items[0]["SupplierID"]["IBAN"],
         "bic" : items[0]["SupplierID"]["BIC"],
@@ -379,7 +437,7 @@ def write_to_dimetrics(data, supplier_id, site_id, content=None, file_name="file
         accounting_number = last_accounting.get("AccountingNumber")
         
         next_acc_year = datetime.now().year
-        next_acc_month = f"{datetime.now().month:02d}" 
+        next_acc_month = f"{datetime.now().month - CORR_MONTH:02d}" 
         next_acc_index = f"{(next_index(last_accounting)):04d}"
         next_acc_nr = f"{next_acc_year}{next_acc_month}{next_acc_index}"
 
@@ -477,7 +535,7 @@ def resolve_threshold(results):
     response = api_client.fetch(service="bez_database", resource="bez_price", params={"take": "10000000"})
     for i,result in enumerate(results): 
         weighting_date = parser.parse(result["WeighingDate"])
-        # params={"where": f"DateEnd>={weighting_date}|SupplierID={result['SupplierID']['id']}|MaterialID={result['MaterialID']['id']}"}
+        
         item = [r for r in response if r["SupplierID"]["id"] == result["SupplierID"]["id"] and r["MaterialID"]["id"] == result["MaterialID"]["id"] and parser.parse(r["DateEnd"]) >= weighting_date]
         if item != None:
             if len(item) > 1:
