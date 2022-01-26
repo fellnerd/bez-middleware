@@ -7,7 +7,7 @@ services:
       context: .
       dockerfile: ./Dockerfile
     environment:
-      - CORR_MONTH=2
+      - CORR_MONTH=3
       - DMX_HOST=http://202.61.203.69:8010/generics
       - API_KEY=OcEt1b4U.U45t2WRRFJy6kyXSXNkcotxVzXA10hiH
       - COMPOSER_HOST=http://invoicecomposer:8000
@@ -19,3 +19,5 @@ services:
     build:
       context: /usr/projects/invoice-composer/
       dockerfile: ./Dockerfile
+    ports:
+      - 8024:8000

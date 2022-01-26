@@ -39,12 +39,18 @@ def make_order(request):
             id=1
         )
 
-        ### subtract by amount
-        refresh_stock(order)
+        ### stop if already sent
+        if order['sent']:
+            return Response(status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
+        ### subtract by amount
+        status_stock = refresh_stock(order)
+        if not status_stock:
+            return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
         ### send mail to supplier
-        order_min_data = parser.parse(order['order_start_date'])
-        order_max_data = parser.parse(order['order_date_end'])
+        order_min_data = parser.parse(order['stock']['order_start'])
+        order_max_data = parser.parse(order['stock']['order_end'])
         receiver = order['stock']['supplier']['Email']
         status_sent = send_mail(
             order=order,
@@ -91,25 +97,37 @@ def refresh_stock(order):
     min_order = order["stock"]["min_order"] - order["amount"]
     max_order = order["stock"]["max_order"] - order["amount"]
 
-    client.update(
-        service="bez_database",
-        resource="bez_ordersystem_stock",
-        id=order["stock"]["id"],
-        data={
-            "min_order": min_order,
-            "max_order": max_order
-        }
-    )
+    if max_order >= 0:
+        client.update(
+            service="bez_database",
+            resource="bez_ordersystem_stock",
+            id=order["stock"]["id"],
+            data={
+                "min_order": min_order,
+                "max_order": max_order
+            }
+        )
+        return True
+    else:
+        client.update(
+            service="bez_database",
+            resource="bez_ordersystem",
+            data={
+                "error": "Die Bestellung konnte nicht durchgeführt werden: Maximalmenge erreicht!",
+            },
+            id=order['id']
+        )
+        return False
 
 def send_mail(order, template, receiver, subject, message_header = "", message = ""):
     data = {
             "template":template,
             "sender_mail":"system@dimetrics.io",
-            "password":"Felldl1304#",
-            "port":"465",
+            "password":"felldl1304#",
+            "port":"587",
             "sender_name":"Dimetrics",
-            "smtp_addr":"dimetrics.io",
-            "user":"system@dimetrics.io",
+            "smtp_addr":"smtp.office365.com",
+            "user":"admin@dimetrics.io",
             "subject": subject,
             "message": message,
             "receiver_email": receiver,
@@ -117,6 +135,21 @@ def send_mail(order, template, receiver, subject, message_header = "", message =
             "company_meta": "Bioenergiezentrum GmbH",
             "html_message": False
         }
+    # data = {
+    #         "template":template,
+    #         "sender_mail":"glo.sa.mail-beo@neuman.at",
+    #         "password":"yVVbzS3GcfpXirx3yn4L",
+    #         "port":"587",
+    #         "sender_name":"Bioenergiezentrum GmbH",
+    #         "smtp_addr":"smtp.office365.com",
+    #         "user":"glo.sa.mail-beo@neuman.at",
+    #         "subject": subject,
+    #         "message": message,
+    #         "receiver_email": receiver,
+    #         "message_header": message_header,
+    #         "company_meta": "Bioenergiezentrum GmbH",
+    #         "html_message": False
+    #     }
     response = requests.post(
         url="https://dimetrics-func.azurewebsites.net/api/mailer?code=AB8UrAM5M7a/6qxj9osKMDpzKQ1fHrDfgRa/7PDVMfA5n3cqPfcBww==",
         data=json.dumps(data),
