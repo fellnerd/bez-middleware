@@ -123,11 +123,11 @@ def send_mail(order, template, receiver, subject, message_header = "", message =
     data = {
             "template":template,
             "sender_mail":"system@dimetrics.io",
-            "password":"Felldl1304#",
-            "port":"465",
+            "password":"felldl1304#",
+            "port":"587",
             "sender_name":"Dimetrics",
-            "smtp_addr":"dimetrics.io",
-            "user":"system@dimetrics.io",
+            "smtp_addr":"smtp.office365.com",
+            "user":"admin@dimetrics.io",
             "subject": subject,
             "message": message,
             "receiver_email": receiver,
@@ -135,6 +135,21 @@ def send_mail(order, template, receiver, subject, message_header = "", message =
             "company_meta": "Bioenergiezentrum GmbH",
             "html_message": False
         }
+    # data = {
+    #         "template":template,
+    #         "sender_mail":"glo.sa.mail-beo@neuman.at",
+    #         "password":"yVVbzS3GcfpXirx3yn4L",
+    #         "port":"587",
+    #         "sender_name":"Bioenergiezentrum GmbH",
+    #         "smtp_addr":"smtp.office365.com",
+    #         "user":"glo.sa.mail-beo@neuman.at",
+    #         "subject": subject,
+    #         "message": message,
+    #         "receiver_email": receiver,
+    #         "message_header": message_header,
+    #         "company_meta": "Bioenergiezentrum GmbH",
+    #         "html_message": False
+    #     }
     response = requests.post(
         url="https://dimetrics-func.azurewebsites.net/api/mailer?code=AB8UrAM5M7a/6qxj9osKMDpzKQ1fHrDfgRa/7PDVMfA5n3cqPfcBww==",
         data=json.dumps(data),

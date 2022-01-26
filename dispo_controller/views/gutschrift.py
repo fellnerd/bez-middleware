@@ -41,7 +41,8 @@ months = [
 ]
 
 corr_month_env = int(os.getenv('CORR_MONTH'))
-CORR_MONTH = corr_month_env if corr_month_env else 0
+#CORR_MONTH = corr_month_env if corr_month_env else 0  # commented out due to rework reasons
+CORR_MONTH = 0
 COMPOSER_HOST = os.getenv('COMPOSER_HOST')
 
 # Create your views here.
@@ -79,9 +80,9 @@ def create_credit(request):
         results = api_client.fetch(service="bez_database", resource="bez_disposition", params={"where": "StateID=3", "take": "20000"})
         logger.info("Type: Proforma")
 
-    if results == None:
+    if results == None or []:
         return Response({
-            "body": False
+            "body": "Keine Lieferungen gefunden"
         })
 
     # get all sitesd
@@ -106,14 +107,22 @@ def create_credit(request):
     )
     
     # Get actual month
-    month_now = datetime.now().month - CORR_MONTH
-
+    if(type == "Proforma"):
+        selected_month = int(data["month"])
+        selected_year = data["year"]
+    if(type == "Gutschrift"):
+        closed_date = parser.parse(data['closed_date'])
+        selected_month = closed_date.month
+        selected_year = closed_date.year
+        data['month'] = selected_month
+        data['year'] = selected_year
+    
   
     # Filter Data of actual month
     results_this_month = []
     for result in results:
         weighingdate = parser.parse(result["WeighingDate"])
-        if weighingdate.month == month_now:
+        if weighingdate.month == selected_month and weighingdate.year == selected_year:
             results_this_month.append(result)
 
     
@@ -125,6 +134,8 @@ def create_credit(request):
         diff = abs(len(results) - len(results_this_month))
         print(f"Es sind {diff} Buchungen von einem Anderen Monat offen")
         logger.info(f"Es sind {diff} Buchungen von einem Anderen Monat offen")
+        if(data["proof_consistency"] == 1 ):
+            return Response({"detail": f"Es sind {diff} Buchungen von einem Anderen Monat offen"}, status=status.HTTP_406_NOT_ACCEPTABLE)
     
     # Group data by Supplier
     def key_func_supplier(k):
@@ -171,7 +182,7 @@ def create_credit(request):
     #clean accounting data of actual month and insert new one
     if type == "Proforma":
         logger.info("Clean up old proforma....")
-        cleanup_accounting_data()
+        cleanup_accounting_data(data)
         logger.info("Clean up old proforma done")
 
     model_count = len(table_models)
@@ -231,6 +242,12 @@ def resolve_countries(rows):
             print("")
     return rows
 
+def tdiv(x) -> str:
+    
+    s = "{:0,.2f}".format(x)
+    s = s.replace(',','_').replace('.',',')
+    s = s.replace('_','.')
+    return s
  
 
 def get_tabel_model(items, data):
@@ -243,6 +260,7 @@ def get_tabel_model(items, data):
     except Exception as e:
         logger.error(str(e))
     
+    sum_weight = dec(0)
     grouped = group_categories(items)
     sum_price = 0
     for entities in grouped:
@@ -256,7 +274,7 @@ def get_tabel_model(items, data):
                     },
                     {
                         'name': 'Wasser',
-                        'value': entities.get("Water"),
+                        'value': str(entities.get("Water")).replace('.', ','),
                         'subtitle': '[% t-lutro]'
                     },
                     {
@@ -271,12 +289,13 @@ def get_tabel_model(items, data):
                     },
                     {
                         'name': 'Gesamt',
-                        'value': f"€ {str(dec(dec((entities['Weight']/1000))*dec(entities['Price']))).replace('.', ',')}",
+                        'value': f"€ {str(tdiv(dec(dec((entities['Weight']/1000))*dec(entities['Price']))))}",
                         'subtitle': '[€/Kategorie]'
                     }
                 ]
             )
         sum_price = dec(sum_price) + (dec((entities['Weight']/1000))*dec(entities['Price']))
+        sum_weight += dec((entities['Weight']/1000))
         
     # create sum
     
@@ -284,11 +303,35 @@ def get_tabel_model(items, data):
     vat_price = sum_price * (vat + 1) - sum_price
     vat_price = vat_price if vat_price > 0 else 0
     sum_price = sum_price + vat_price
+    sum_price_no_vat = sum_price - vat_price
 
     table_model.append([
             {
                 'name': 'Material',
-                'value': f'zuzüglich {vat * 100} % MWSt'
+                'value': f'Zwischensumme'
+            },
+            {
+                'name': 'Wasser',
+                'value': ' '
+            },
+            {
+                'name': 'Menge',
+                'value': f'{str(sum_weight).replace(".", ",")}'
+            },
+            {
+                'name': 'Preis',
+                'value': ' '
+            },
+            {
+                'name': 'Gesamt',
+                'value': f"€ {tdiv(dec(sum_price_no_vat))}"
+            }
+        ])
+
+    table_model.append([
+            {
+                'name': 'Material',
+                'value': f'zuzüglich {str(vat * 100).replace(".", ",")} % MWSt'
             },
             {
                 'name': 'Wasser',
@@ -304,7 +347,7 @@ def get_tabel_model(items, data):
             },
             {
                 'name': 'Gesamt',
-                'value': f"€ {str(dec(vat_price)).replace('.', ',')}"
+                'value': f"€ {tdiv(dec(vat_price))}"
             }
         ])
 
@@ -327,7 +370,7 @@ def get_tabel_model(items, data):
             },
             {
                 'name': 'Summe',
-                'value': f"€ {str(dec(sum_price)).replace('.', ',')}"
+                'value': f"€ {tdiv(dec(sum_price))}"
             }
         ])
 
@@ -337,10 +380,10 @@ def get_tabel_model(items, data):
         "supplier" : items[0]["SupplierID"]["Name"],
         "supplier_street" : str(dictor(items[0], "SupplierID.Street")) + " " + str(dictor(items[0], "SupplierID.StreetNumber")),
         "supplier_city" : str(dictor(items[0], "SupplierID.CityID.CountryID.Code")) + "-" + str(dictor(items[0], "SupplierID.CityID.ZipCode")) + " " + str(dictor(items[0], "SupplierID.CityID.Name")),
-        "create_date" : f"{str(calendar.monthrange(datetime.now().year, datetime.now().month - CORR_MONTH)[1])}.{datetime.now().month - CORR_MONTH}.{datetime.now().year}",
+        "create_date" : f"{str(calendar.monthrange(int(data['year']), int(data['month']))[1])}.{data['month']}.{data['year']}",
         "uid" : items[0]["SupplierID"]["UID"],
         "supplier" : items[0]["SupplierID"]["Name"],
-        "month" : months[datetime.now().month - CORR_MONTH -1][1] + ", " + str(datetime.now().year),
+        "month" : months[int(data['month']) - CORR_MONTH -1][1] + ", " + str(data['year']),
         "user_name": user_name,
         "site_name" : items[0]["SiteID"]["Name"],
         "site_street" : dictor(items[0], 'SiteID.street'),
@@ -362,7 +405,9 @@ def get_tabel_model(items, data):
         "company_bic" : data.get("company_bic"),
         "table_model" : table_model,
         "supplier_id": items[0]["SupplierID"]["id"],
-        "site_id": items[0]["SiteID"]["id"]
+        "site_id": items[0]["SiteID"]["id"],
+        "addon1": "Steuerfreie innergemeinschaftliche Lieferung" if str(dictor(items[0], "SupplierID.CityID.CountryID.Code")) != "AT" and dictor(items[0], "SupplierID.VAT") <= 0 else "MWSt im Gesamtbetrag inkludiert" if str(dictor(items[0], "SupplierID.CityID.CountryID.Code")) != "AT" else "", 
+        "addon2": "Preise inklusive Dieselzuschlag"
     }
 
 def group_categories(items):
@@ -437,7 +482,7 @@ def write_to_dimetrics(data, supplier_id, site_id, content=None, file_name="file
         accounting_number = last_accounting.get("AccountingNumber")
         
         next_acc_year = datetime.now().year
-        next_acc_month = f"{datetime.now().month - CORR_MONTH:02d}" 
+        next_acc_month = f"{int(data['month']) - CORR_MONTH:02d}" 
         next_acc_index = f"{(next_index(last_accounting)):04d}"
         next_acc_nr = f"{next_acc_year}{next_acc_month}{next_acc_index}"
 
@@ -449,7 +494,7 @@ def write_to_dimetrics(data, supplier_id, site_id, content=None, file_name="file
     if data["type"] == "Proforma":
         data_obj = {
             "AccountingNumber": next_acc_nr,
-            "ClosedDate": datetime.now(tz=pytz.timezone('Europe/Vienna')).replace(month=actual_month - CORR_MONTH).strftime('%Y-%m-%d %H:%M:%S'),
+            "ClosedDate": datetime.now(tz=pytz.timezone('Europe/Vienna')).replace(month=int(data['month']), year=data['year']).strftime('%Y-%m-%d %H:%M:%S'),
             "booked": False,
             "supplier": supplier_id,
             "site": site_id,
@@ -464,7 +509,7 @@ def write_to_dimetrics(data, supplier_id, site_id, content=None, file_name="file
     if data["type"] == "Gutschrift":
         data_obj = {
             "AccountingNumber": data["billnr"],
-            "ClosedDate": datetime.now(tz=pytz.timezone('Europe/Vienna')).replace(month=actual_month - CORR_MONTH).strftime('%Y-%m-%d %H:%M:%S'),
+            "ClosedDate": datetime.now(tz=pytz.timezone('Europe/Vienna')).replace(month=int(data['month']), year=data['year']).strftime('%Y-%m-%d %H:%M:%S'),
             "booked": True,
             "credit":[
                 {
@@ -510,9 +555,9 @@ def next_index(last_accounting):
         return 1   
     return acc_nr_index + 1
 
-def cleanup_accounting_data():
+def cleanup_accounting_data(data):
     #ClosedDate%3D2021-08-01T00:00:00.000Z--2021-08-31T23:59:59.999Z
-    given_date = datetime.now(tz=pytz.timezone('Europe/Vienna')).replace(hour=0, minute=0, second=0)
+    given_date = datetime.now(tz=pytz.timezone('Europe/Vienna')).replace(hour=0, minute=0, second=0, month=int(data['month']), year=data['year'])
     if CORR_MONTH > 0:
         given_date = given_date.replace(month=given_date.month-CORR_MONTH)
     first_day_of_month = given_date.replace(day=1)
@@ -532,18 +577,20 @@ def cleanup_accounting_data():
 
 
 def resolve_threshold(results):
+    
     response = api_client.fetch(service="bez_database", resource="bez_price", params={"take": "10000000"})
     for i,result in enumerate(results): 
         weighting_date = parser.parse(result["WeighingDate"])
-        
+        results[i]["Water"] = "k.A"
         item = [r for r in response if r["SupplierID"]["id"] == result["SupplierID"]["id"] and r["MaterialID"]["id"] == result["MaterialID"]["id"] and parser.parse(r["DateEnd"]) >= weighting_date]
+        # print(item)
         if item != None:
             if len(item) > 1:
                 print("More than one item!")
             if len(item) > 0:
                 item = item[0]
                 th1 = dec(item["Threshold1"]) 
-                th2 = dec(item["Threshold1"])
+                th2 = dec(item["Threshold2"])
                 wc = result["WeightCorrection"]
                 water = None
                 if wc >= th1:
@@ -556,6 +603,7 @@ def resolve_threshold(results):
                     water = f"<{th2*100}"
                 
                 results[i]["Water"] = water
+       
     return results
 
 
